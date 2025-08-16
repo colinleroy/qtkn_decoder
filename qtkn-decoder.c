@@ -77,11 +77,12 @@ static unsigned short val_from_last[256] = {
   0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010
 };
 
+	#define BUF_SIZE 321
 	unsigned short curve[0x10000];
 	unsigned short huff[19][256];
 	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
-	short last[3] = { 16,16,16 }, mul[3], buf[3][3][386];
-	short last_m = 16, mul_m, buf_m[3][386];
+	short last[3] = { 16,16,16 }, mul[3], buf[3][3][BUF_SIZE];
+	short last_m = 16, mul_m, buf_m[3][BUF_SIZE];
 	char *header;
 	unsigned short *tmp;
 	unsigned char *tmp_c, *ptr;
@@ -216,7 +217,7 @@ static unsigned short val_from_last[256] = {
 		}
 	}
 #else
-	for (i=0; i < 386; i++) {
+	for (i=0; i < BUF_SIZE; i++) {
 		(buf_m[0])[i] = 2048;
 	}
 	for (row=0; row < height; row+=4) {
