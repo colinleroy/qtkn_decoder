@@ -1,3 +1,5 @@
+CFLAGS=-g -O0 -DCOLOR
+
 all: qtkn_decoder
 
 clean:
