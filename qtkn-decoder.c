@@ -129,7 +129,7 @@ static unsigned short val_from_last[256] = {
 	for (i=0; i < (int)(sizeof(buf)/sizeof(short)); i++) {
 		((short *)buf)[i] = 2048;
 	}
-
+#ifdef COLOR
 	for (row=0; row < height; row+=4) {
 		for (c=0; c < 3; c++) {
 			mul[c] = getbits(6, &raw);
@@ -214,6 +214,130 @@ static unsigned short val_from_last[256] = {
 			}
 		}
 	}
+#else
+	for (row=0; row < height; row+=4) {
+		c = 0;
+		mul[c] = getbits(6, &raw);
+		getbits(6, &raw);
+		getbits(6, &raw);
+
+		val = val_from_last[last[c]] * mul[c];
+
+		for (i=0; i < (int)(sizeof(buf[0])/sizeof(short)); i++) {
+			((short *)buf[c])[i] = (((short *)buf[c])[i] * val - 1) >> 12;
+		}
+		last[c] = mul[c];
+
+		for (r=0; r < 2; r++) {
+			printf("r %d for row %d\n", r, row);
+			buf[c][1][width/2] = buf[c][2][width/2] = mul[c] << 7;
+			for (tree=1, col=width/2; col > 0; ) {
+				if ((tree = radc_token(tree, &raw))) {
+					col -= 2;
+					if (tree == 8) {
+						for (y=1; y < 3; y++) {
+							for (x=col+1; x >= col; x--) {
+								unsigned char token = (unsigned char) radc_token(18, &raw);
+								buf[c][y][x] = token * mul[c];
+							}
+						}
+					} else {
+						for (y=1; y < 3; y++) {
+							for (x=col+1; x >= col; x--) {
+								unsigned short predictor;
+								unsigned short token;
+								if (c) {
+									predictor = (buf[c][y-1][x] + buf[c][y][x+1]) / 2;
+								} else {
+									predictor = (buf[c][y-1][x+1] + 2*buf[c][y-1][x] + buf[c][y][x+1]) / 4;
+								}
+								token = radc_token(tree+10, &raw);
+								buf[c][y][x] = token * 16 + predictor;
+							}
+						}
+					}
+				} else
+					do {
+						nreps = (col > 2) ? radc_token(9, &raw) + 1 : 1;
+						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
+							col -= 2;
+							for (y=1; y < 3; y++) {
+								for (x=col+1; x >= col; x--) {
+									if (c) {
+										buf[c][y][x] = (buf[c][y-1][x] + buf[c][y][x+1]) / 2;
+									} else {
+										buf[c][y][x] = (buf[c][y-1][x+1] + 2*buf[c][y-1][x] + buf[c][y][x+1]) / 4;
+									}
+								}
+							}
+							if (rep & 1) {
+								step = radc_token(10, &raw) << 4;
+								for (y=1; y < 3; y++) {
+									for (x=col+1; x >= col; x--) {
+										buf[c][y][x] += step;
+									}
+								}
+							}
+						}
+					} while (nreps == 9);
+			}
+			for (y=0; y < 2; y++) {
+				for (x=0; x < width/2; x++) {
+					val = (buf[c][y+1][x] << 4) / mul[c];
+					if (val < 0) val = 0;
+					if (c) RAW(tmp, row+y*2+c-1,x*2+2-c) = val;
+					else   RAW(tmp, row+r*2+y,x*2+y) = val;
+				}
+			}
+			memcpy (buf[c][0]+!c, buf[c][2], sizeof buf[c][0]-2*!c);
+		}
+
+		/* Copy the data we got */
+		for (y=row; y < row+4; y++) {
+			for (x=0; x < width; x++) {
+				if ((x+y) & 1) {
+					r = x ? x-1 : x+1;
+					s = x+1 < width ? x+1 : x-1;
+					val = (RAW(tmp, y, x)-2048) + (RAW(tmp,y,r)+RAW(tmp,y,s))/2;
+					if (val < 0) val = 0;
+					RAW(tmp,y,x) = val;
+				}
+			}
+		}
+
+    /* Consume RADC tokens but don't care about them. */
+		for (c=1; c != 3; c++) {
+			for (tree=1, col=width/2; col > 0; ) {
+				if ((tree = radc_token(tree, &raw))) {
+					col -= 2;
+					if (tree == 8) {
+						for (y=1; y < 3; y++) {
+							for (x=col+1; x >= col; x--) {
+								radc_token(18, &raw);
+							}
+						}
+					} else {
+						for (y=1; y < 3; y++) {
+							for (x=col+1; x >= col; x--) {
+								radc_token(tree+10, &raw);
+							}
+						}
+					}
+				} else
+					do {
+						nreps = (col > 2) ? radc_token(9, &raw) + 1 : 1;
+						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
+							col -= 2;
+							if (rep & 1) {
+								radc_token(10, &raw);
+							}
+						}
+					} while (nreps == 9);
+			}
+		}
+
+	}
+#endif
 
   for (i=0; i < height*width; i++) {
     tmp_c[i] = LIM(curve[tmp[i]] >> 4, 0, 255);
