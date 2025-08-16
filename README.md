@@ -12,3 +12,8 @@ No idea about the `for (r = 0; r <= !c; r++)` subloop.
 ## The goal
 
 The goal is to write an efficient algorithm to use in the Quicktake for Apple II project, as this one is very long, even when limited to monochrome decoding. Reaching good performance would mean getting rid of all possible 16-bit maths, especially multiplications and divisions, but I fear this will be hard.
+
+## Testing
+
+Build with `make clean all`.
+Test with `./qtkn_decoder <QT150/image.QTK> output.ppm`.
