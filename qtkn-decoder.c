@@ -81,6 +81,7 @@ static unsigned short val_from_last[256] = {
 	unsigned short huff[19][256];
 	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
 	short last[3] = { 16,16,16 }, mul[3], buf[3][3][386];
+	short last_m = 16, mul_m, buf_m[3][386];
 	char *header;
 	unsigned short *tmp;
 	unsigned char *tmp_c, *ptr;
@@ -126,10 +127,10 @@ static unsigned short val_from_last[256] = {
 	getbits(-1, &raw);
 
 	/* Init the raw data buffer */
+#ifdef COLOR
 	for (i=0; i < (int)(sizeof(buf)/sizeof(short)); i++) {
 		((short *)buf)[i] = 2048;
 	}
-#ifdef COLOR
 	for (row=0; row < height; row+=4) {
 		for (c=0; c < 3; c++) {
 			mul[c] = getbits(6, &raw);
@@ -215,22 +216,25 @@ static unsigned short val_from_last[256] = {
 		}
 	}
 #else
+	for (i=0; i < 386; i++) {
+		(buf_m[0])[i] = 2048;
+	}
 	for (row=0; row < height; row+=4) {
 		c = 0;
-		mul[c] = getbits(6, &raw);
+		mul_m = getbits(6, &raw);
 		getbits(6, &raw);
 		getbits(6, &raw);
 
-		val = val_from_last[last[c]] * mul[c];
+		val = val_from_last[last_m] * mul_m;
 
 		for (i=0; i < (int)(sizeof(buf[0])/sizeof(short)); i++) {
-			((short *)buf[c])[i] = (((short *)buf[c])[i] * val - 1) >> 12;
+			((short *)buf_m)[i] = (((short *)buf_m)[i] * val - 1) >> 12;
 		}
-		last[c] = mul[c];
+		last_m = mul_m;
 
 		for (r=0; r < 2; r++) {
 			printf("r %d for row %d\n", r, row);
-			buf[c][1][width/2] = buf[c][2][width/2] = mul[c] << 7;
+			buf_m[1][width/2] = buf_m[2][width/2] = mul_m << 7;
 			for (tree=1, col=width/2; col > 0; ) {
 				if ((tree = radc_token(tree, &raw))) {
 					col -= 2;
@@ -238,7 +242,7 @@ static unsigned short val_from_last[256] = {
 						for (y=1; y < 3; y++) {
 							for (x=col+1; x >= col; x--) {
 								unsigned char token = (unsigned char) radc_token(18, &raw);
-								buf[c][y][x] = token * mul[c];
+								buf_m[y][x] = token * mul_m;
 							}
 						}
 					} else {
@@ -246,13 +250,10 @@ static unsigned short val_from_last[256] = {
 							for (x=col+1; x >= col; x--) {
 								unsigned short predictor;
 								unsigned short token;
-								if (c) {
-									predictor = (buf[c][y-1][x] + buf[c][y][x+1]) / 2;
-								} else {
-									predictor = (buf[c][y-1][x+1] + 2*buf[c][y-1][x] + buf[c][y][x+1]) / 4;
-								}
+
+								predictor = (buf_m[y-1][x+1] + 2*buf_m[y-1][x] + buf_m[y][x+1]) / 4;
 								token = radc_token(tree+10, &raw);
-								buf[c][y][x] = token * 16 + predictor;
+								buf_m[y][x] = token * 16 + predictor;
 							}
 						}
 					}
@@ -263,18 +264,14 @@ static unsigned short val_from_last[256] = {
 							col -= 2;
 							for (y=1; y < 3; y++) {
 								for (x=col+1; x >= col; x--) {
-									if (c) {
-										buf[c][y][x] = (buf[c][y-1][x] + buf[c][y][x+1]) / 2;
-									} else {
-										buf[c][y][x] = (buf[c][y-1][x+1] + 2*buf[c][y-1][x] + buf[c][y][x+1]) / 4;
-									}
+									buf_m[y][x] = (buf_m[y-1][x+1] + 2*buf_m[y-1][x] + buf_m[y][x+1]) / 4;
 								}
 							}
 							if (rep & 1) {
 								step = radc_token(10, &raw) << 4;
 								for (y=1; y < 3; y++) {
 									for (x=col+1; x >= col; x--) {
-										buf[c][y][x] += step;
+										buf_m[y][x] += step;
 									}
 								}
 							}
@@ -283,13 +280,13 @@ static unsigned short val_from_last[256] = {
 			}
 			for (y=0; y < 2; y++) {
 				for (x=0; x < width/2; x++) {
-					val = (buf[c][y+1][x] << 4) / mul[c];
-					if (val < 0) val = 0;
-					if (c) RAW(tmp, row+y*2+c-1,x*2+2-c) = val;
-					else   RAW(tmp, row+r*2+y,x*2+y) = val;
+					val = (buf_m[y+1][x] << 4) / mul_m;
+					if (val < 0)
+						val = 0;
+					RAW(tmp, row+r*2+y,x*2+y) = val;
 				}
 			}
-			memcpy (buf[c][0]+!c, buf[c][2], sizeof buf[c][0]-2*!c);
+			memcpy (buf_m[0]+1, buf_m[2], sizeof buf_m[0]-2);
 		}
 
 		/* Copy the data we got */
