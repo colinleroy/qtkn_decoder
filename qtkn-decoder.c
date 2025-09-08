@@ -80,10 +80,12 @@ static unsigned short val_from_last[256] = {
 	#define BUF_SIZE 321
 	unsigned short curve[0x10000];
 	unsigned short huff[19][256];
+	unsigned char huff_l[19][256], huff_h[19][256];
 	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
 	short last[3] = { 16,16,16 }, mul[3], buf[3][3][BUF_SIZE];
-	short last_m = 16, mul_m, buf_m[3][BUF_SIZE];
+	short buf_m[3][BUF_SIZE];
 	char *header;
+	unsigned char  last_m = 16, mul_m;
 	unsigned short *tmp;
 	unsigned char *tmp_c, *ptr;
 
@@ -115,13 +117,30 @@ static unsigned short val_from_last[256] = {
 
 	/* Huffman tree structure init, heavily obfuscated */
 	for (s=i=0; i < (int)sizeof src; i+=2) {
+		unsigned short tmp = src[i] << 8 | (unsigned char) src[i+1];
 		for (c=0; c < 256 >> src[i]; c++) {
-			((unsigned short *)huff)[s++] = src[i] << 8 | (unsigned char) src[i+1];
+			((unsigned short *)huff)[s] = tmp;
+			((unsigned char *)huff_l)[s] = tmp & 0xFF;
+			((unsigned char *)huff_h)[s] = tmp >> 8;
+			s++;
 		}
 	}
+
 	s = 3;
 	for (c=0; c < 256; c++) {
-		huff[18][c] = (8-s) << 8 | c >> s << s | 1 << (s-1);
+		unsigned short tmp = (8-s) << 8 | c >> s << s | 1 << (s-1);
+		huff[18][c] = tmp;
+		huff_l[18][c] = tmp & 0xFF;
+		huff_h[18][c] = tmp >> 8;
+	}
+
+	for (c = 0; c < 19; c++) {
+		for (i = 0; i < 256; i++) {
+			unsigned short test = huff_l[c][i] | (huff_h[c][i] << 8);
+			if (test != huff[c][i]) {
+				printf("unexpected val at [%d][%d]: %04X vs %04X\n", c, i, huff[c][i], test);
+			}
+		}
 	}
 
 	/* Init the bitbuffer */
@@ -234,47 +253,54 @@ static unsigned short val_from_last[256] = {
 		last_m = mul_m;
 
 		for (r=0; r < 2; r++) {
-			printf("r %d for row %d\n", r, row);
 			buf_m[1][width/2] = buf_m[2][width/2] = mul_m << 7;
 			for (tree=1, col=width/2; col > 0; ) {
 				if ((tree = radc_token(tree, &raw))) {
 					col -= 2;
 					if (tree == 8) {
-						for (y=1; y < 3; y++) {
-							for (x=col+1; x >= col; x--) {
-								unsigned char token = (unsigned char) radc_token(18, &raw);
-								buf_m[y][x] = token * mul_m;
-							}
-						}
+						unsigned char token;
+						token = (unsigned char) radc_token(18, &raw);
+						buf_m[1][col+1] = token * mul_m;
+						token = (unsigned char) radc_token(18, &raw);
+						buf_m[1][col] = token * mul_m;
+						token = (unsigned char) radc_token(18, &raw);
+						buf_m[2][col+1] = token * mul_m;
+						token = (unsigned char) radc_token(18, &raw);
+						buf_m[2][col] = token * mul_m;
 					} else {
-						for (y=1; y < 3; y++) {
-							for (x=col+1; x >= col; x--) {
-								unsigned short predictor;
-								unsigned short token;
+						unsigned short predictor;
+						unsigned short token;
 
-								predictor = (buf_m[y-1][x+1] + 2*buf_m[y-1][x] + buf_m[y][x+1]) / 4;
-								token = radc_token(tree+10, &raw);
-								buf_m[y][x] = token * 16 + predictor;
-							}
-						}
+						predictor = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + buf_m[1][col+2]) >> 2;
+						token = radc_token(tree+10, &raw);
+						buf_m[1][col+1] = (token << 4) + predictor;
+						predictor = ((buf_m[0][col] << 1) + buf_m[0][col+1] + buf_m[1][col+1]) >> 2;
+						token = radc_token(tree+10, &raw);
+						buf_m[1][col] = (token << 4) + predictor;
+
+						predictor = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[2][col+2]) >> 2;
+						token = radc_token(tree+10, &raw);
+						buf_m[2][col+1] = (token << 4) + predictor;
+						predictor = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[2][col+1]) >> 2;
+						token = radc_token(tree+10, &raw);
+						buf_m[2][col] = (token << 4) + predictor;
 					}
 				} else
 					do {
 						nreps = (col > 2) ? radc_token(9, &raw) + 1 : 1;
 						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
 							col -= 2;
-							for (y=1; y < 3; y++) {
-								for (x=col+1; x >= col; x--) {
-									buf_m[y][x] = (buf_m[y-1][x+1] + 2*buf_m[y-1][x] + buf_m[y][x+1]) / 4;
-								}
-							}
+							buf_m[1][col+1] = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + buf_m[1][col+2]) >> 2;
+							buf_m[2][col+1] = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[2][col+2]) >> 2;
+							buf_m[1][col] = ((buf_m[0][col] << 1) + buf_m[0][col+1] + buf_m[1][col+1]) >> 2;
+							buf_m[2][col] = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[2][col+1]) >> 2;
+
 							if (rep & 1) {
 								step = radc_token(10, &raw) << 4;
-								for (y=1; y < 3; y++) {
-									for (x=col+1; x >= col; x--) {
-										buf_m[y][x] += step;
-									}
-								}
+								buf_m[1][col+1] += step;
+								buf_m[2][col+1] += step;
+								buf_m[1][col] += step;
+								buf_m[2][col] += step;
 							}
 						}
 					} while (nreps == 9);
