@@ -86,7 +86,6 @@ static unsigned short val_from_last[256] = {
 	short buf_m[3][BUF_SIZE];
 	char *header;
 	unsigned char  last_m = 16, mul_m;
-	unsigned short *tmp;
 	unsigned char *tmp_c, *ptr;
 
 	header = qtk_ppm_header(width, height);
@@ -95,16 +94,9 @@ static unsigned short val_from_last[256] = {
 
 	len = qtk_ppm_size(width, height);
 
-	tmp = malloc((size_t)width * (size_t)height * sizeof(unsigned short));
-	if (tmp == NULL) {
-		free(header);
-		return -ENOMEM;
-	}
-
 	tmp_c = malloc((size_t)width * (size_t)height);
 	if (tmp_c == NULL) {
 		free(header);
-		free(tmp);
 		return -ENOMEM;
 	}
 
@@ -146,96 +138,6 @@ static unsigned short val_from_last[256] = {
 	/* Init the bitbuffer */
 	getbits(-1, &raw);
 
-	/* Init the raw data buffer */
-#ifdef COLOR
-	for (i=0; i < (int)(sizeof(buf)/sizeof(short)); i++) {
-		((short *)buf)[i] = 2048;
-	}
-	for (row=0; row < height; row+=4) {
-		for (c=0; c < 3; c++) {
-			mul[c] = getbits(6, &raw);
-		}
-		for (c=0; c < 3; c++) {
-			val = val_from_last[last[c]] * mul[c];
-
-			for (i=0; i < (int)(sizeof(buf[0])/sizeof(short)); i++) {
-				((short *)buf[c])[i] = (((short *)buf[c])[i] * val - 1) >> 12;
-			}
-			last[c] = mul[c];
-
-			for (r=0; r <= !c; r++) {
-				buf[c][1][width/2] = buf[c][2][width/2] = mul[c] << 7;
-				for (tree=1, col=width/2; col > 0; ) {
-					if ((tree = radc_token(tree, &raw))) {
-						col -= 2;
-						if (tree == 8) {
-							for (y=1; y < 3; y++) {
-								for (x=col+1; x >= col; x--) {
-									buf[c][y][x] = (unsigned char) radc_token(18, &raw) * mul[c];
-								}
-							}
-						} else {
-							for (y=1; y < 3; y++) {
-								for (x=col+1; x >= col; x--) {
-									unsigned short predictor;
-									if (c) {
-										predictor = (buf[c][y-1][x] + buf[c][y][x+1]) / 2;
-									} else {
-										predictor = (buf[c][y-1][x+1] + 2*buf[c][y-1][x] + buf[c][y][x+1]) / 4;
-									}
-									buf[c][y][x] = radc_token(tree+10, &raw) * 16 + predictor;
-								}
-							}
-						}
-					} else
-						do {
-							nreps = (col > 2) ? radc_token(9, &raw) + 1 : 1;
-							for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
-								col -= 2;
-								for (y=1; y < 3; y++) {
-									for (x=col+1; x >= col; x--) {
-										if (c) {
-											buf[c][y][x] = (buf[c][y-1][x] + buf[c][y][x+1]) / 2;
-										} else {
-											buf[c][y][x] = (buf[c][y-1][x+1] + 2*buf[c][y-1][x] + buf[c][y][x+1]) / 4;
-										}
-									}
-								}
-								if (rep & 1) {
-									step = radc_token(10, &raw) << 4;
-									for (y=1; y < 3; y++) {
-										for (x=col+1; x >= col; x--) {
-											buf[c][y][x] += step;
-										}
-									}
-								}
-							}
-						} while (nreps == 9);
-				}
-				for (y=0; y < 2; y++) {
-					for (x=0; x < width/2; x++) {
-						val = (buf[c][y+1][x] << 4) / mul[c];
-						if (val < 0) val = 0;
-						if (c) RAW(tmp, row+y*2+c-1,x*2+2-c) = val;
-						else   RAW(tmp, row+r*2+y,x*2+y) = val;
-					}
-				}
-				memcpy (buf[c][0]+!c, buf[c][2], sizeof buf[c][0]-2*!c);
-			}
-		}
-		for (y=row; y < row+4; y++) {
-			for (x=0; x < width; x++) {
-				if ((x+y) & 1) {
-					r = x ? x-1 : x+1;
-					s = x+1 < width ? x+1 : x-1;
-					val = (RAW(tmp, y, x)-2048) + (RAW(tmp,y,r)+RAW(tmp,y,s))/2;
-					if (val < 0) val = 0;
-					RAW(tmp,y,x) = val;
-				}
-			}
-		}
-	}
-#else
 	for (i=0; i < BUF_SIZE; i++) {
 		(buf_m[0])[i] = 2048;
 	}
@@ -253,6 +155,7 @@ static unsigned short val_from_last[256] = {
 		last_m = mul_m;
 
 		for (r=0; r < 2; r++) {
+			// printf("r loop %d\n", r);
 			buf_m[1][width/2] = buf_m[2][width/2] = mul_m << 7;
 			for (tree=1, col=width/2; col > 0; ) {
 				if ((tree = radc_token(tree, &raw))) {
@@ -305,53 +208,48 @@ static unsigned short val_from_last[256] = {
 						}
 					} while (nreps == 9);
 			}
+
 			for (y=0; y < 2; y++) {
+				// printf(" y loop %d\n", y);
 				for (x=0; x < width/2; x++) {
-					val = (buf_m[y+1][x] << 4) / mul_m;
+					val = ((buf_m[y+1][x] << 4) / mul_m) >> 4;
 					if (val < 0)
 						val = 0;
-					RAW(tmp, row+r*2+y,x*2+y) = val;
+					if (val > 255)
+						val = 255;
+					// printf("  from buf_m[%d][%d] to raw [%d][%d]\n",
+					// 			 y+1, x,
+					// 		   row+r*2+y,x*2+y);
+					RAW(tmp_c, row+r*2+y,x*2+y) = val;
 				}
 			}
 			memcpy (buf_m[0]+1, buf_m[2], sizeof buf_m[0]-2);
 		}
 
-		/* Copy the data we got */
-		for (y=row; y < row+4; y++) {
-			for (x=0; x < width; x++) {
-				if ((x+y) & 1) {
-					r = x ? x-1 : x+1;
-					s = x+1 < width ? x+1 : x-1;
-					val = (RAW(tmp, y, x)-2048) + (RAW(tmp,y,r)+RAW(tmp,y,s))/2;
-					if (val < 0) val = 0;
-					RAW(tmp,y,x) = val;
-				}
-			}
-		}
-
     /* Consume RADC tokens but don't care about them. */
 		for (c=1; c != 3; c++) {
-			for (tree=1, col=width/2; col > 0; ) {
+			tree = 1;
+			col = width/4;
+
+			while (col > 0) {
 				if ((tree = radc_token(tree, &raw))) {
-					col -= 2;
+					col --;
 					if (tree == 8) {
-						for (y=1; y < 3; y++) {
-							for (x=col+1; x >= col; x--) {
-								radc_token(18, &raw);
-							}
-						}
+						radc_token(18, &raw);
+						radc_token(18, &raw);
+						radc_token(18, &raw);
+						radc_token(18, &raw);
 					} else {
-						for (y=1; y < 3; y++) {
-							for (x=col+1; x >= col; x--) {
-								radc_token(tree+10, &raw);
-							}
-						}
+						radc_token(tree+10, &raw);
+						radc_token(tree+10, &raw);
+						radc_token(tree+10, &raw);
+						radc_token(tree+10, &raw);
 					}
 				} else
 					do {
-						nreps = (col > 2) ? radc_token(9, &raw) + 1 : 1;
+						nreps = (col > 1) ? radc_token(9, &raw) + 1 : 1;
 						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
-							col -= 2;
+							col--;
 							if (rep & 1) {
 								radc_token(10, &raw);
 							}
@@ -361,16 +259,10 @@ static unsigned short val_from_last[256] = {
 		}
 
 	}
-#endif
-
-  for (i=0; i < height*width; i++) {
-    tmp_c[i] = LIM(curve[tmp[i]] >> 4, 0, 255);
-	}
 
 	*out = calloc(1, len);
 	if (*out == NULL) {
 		free(header);
-		free(tmp);
 		free(tmp_c);
 		return -ENOMEM;
 	}
@@ -380,7 +272,6 @@ static unsigned short val_from_last[256] = {
 	free(header);
 
 	gp_bayer_decode(tmp_c, width, height, ptr, BAYER_TILE_GBRG);
-	free(tmp);
 	free(tmp_c);
 
 	return 0;

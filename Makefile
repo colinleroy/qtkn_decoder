@@ -1,4 +1,4 @@
-CFLAGS=-g -O0 -DCOLOR
+CFLAGS=-g -O0
 
 all: qtkn_decoder
 
