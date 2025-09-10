@@ -212,7 +212,7 @@ static unsigned short val_from_last[256] = {
 			for (y=0; y < 2; y++) {
 				// printf(" y loop %d\n", y);
 				for (x=0; x < width/2; x++) {
-					val = ((buf_m[y+1][x] << 4) / mul_m) >> 4;
+					val = ((buf_m[y+1][x]) / mul_m);
 					if (val < 0)
 						val = 0;
 					if (val > 255)
