@@ -46,7 +46,7 @@ char *qtk_ppm_header(int width, int height) {
 		return NULL;
 
 	snprintf(header, 127,
-					 "P6\n%d %d\n%d\n",
+					 "P5\n#test\n%d %d\n%d\n",
 					 width, height, 255);
 
 	return header;
@@ -61,7 +61,7 @@ int qtk_ppm_size(int width, int height) {
 		return -ENOMEM;
 	}
 
-	len = (width * height * 3) + strlen(header);
+	len = (width * height) + strlen(header);
 	free(header);
 
 	return len;

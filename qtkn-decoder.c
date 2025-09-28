@@ -28,7 +28,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/param.h>
-#include "bayer.h"
 
 #define radc_token(tree, ptr) ((signed char) getbithuff(8, ptr, huff[tree]))
 #define PREDICTOR (c ? (buf[c][y-1][x] + buf[c][y][x+1]) / 2 \
@@ -207,9 +206,6 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 						val = 0;
 					if (val > 255)
 						val = 255;
-					// printf("  from buf_m[%d][%d] to raw [%d][%d]\n",
-					// 			 y+1, x,
-					// 		   row+r*2+y,x*2+y);
 					RAW(tmp_c, row+r*2+y,x*2+y) = val;
 				}
 			}
@@ -260,8 +256,7 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 	strcpy((char *)*out, header);
 	ptr = *out + strlen(header);
 	free(header);
-
-	gp_bayer_decode(tmp_c, width, height, ptr, BAYER_TILE_GBRG);
+	memcpy(ptr, tmp_c, 640*480);
 	free(tmp_c);
 
 	return 0;

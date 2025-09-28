@@ -1,3 +1,4 @@
 qtkn_decoder
 *.ppm
+*.pgm
 test_results
