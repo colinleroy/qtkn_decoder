@@ -34,6 +34,18 @@
 #define FINAL_HEIGHT 240
 
 unsigned char *output;
+unsigned char mul_m;
+
+static void set_output(signed short value, unsigned short row, unsigned short col) {
+	value /= mul_m;
+
+	if (value < 0)
+		value = 0;
+	if (value > 255)
+		value = 255;
+
+	output[(row)*FINAL_WIDTH+col] = value;
+}
 
 int qtkn_decode(unsigned char *raw, unsigned char **out) {
 	static const char src[] = {
@@ -80,10 +92,9 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 	unsigned short huff[19][256];
 	unsigned char huff_l[19][256], huff_h[19][256];
 	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
-	short last[3] = { 16,16,16 }, mul[3];
 	short buf_m[2][BUF_SIZE];
 	char *header;
-	unsigned char  last_m = 16, mul_m;
+	unsigned char  last_m = 16;
 	unsigned char *ptr;
 
 	header = qtk_ppm_header(FINAL_WIDTH, FINAL_HEIGHT);
@@ -155,8 +166,12 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 						unsigned char token;
 						token = (unsigned char) radc_token(18, &raw);
 						buf_m[1][col+1] = token * mul_m;
+						set_output(buf_m[1][col+1], row+r, col+1);
+
 						token = (unsigned char) radc_token(18, &raw);
 						buf_m[1][col] = token * mul_m;
+						set_output(buf_m[1][col], row+r, col);
+
 						token = (unsigned char) radc_token(18, &raw);
 						buf_m[0][col+2] = token * mul_m;
 						token = (unsigned char) radc_token(18, &raw);
@@ -168,13 +183,17 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 						predictor = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + buf_m[1][col+2]) >> 2;
 						token = radc_token(tree+10, &raw);
 						buf_m[1][col+1] = (token << 4) + predictor;
+						set_output(buf_m[1][col+1], row+r, col+1);
+
 						predictor = ((buf_m[0][col] << 1) + buf_m[0][col+1] + buf_m[1][col+1]) >> 2;
 						token = radc_token(tree+10, &raw);
 						buf_m[1][col] = (token << 4) + predictor;
+						set_output(buf_m[1][col], row+r, col);
 
 						predictor = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[0][col+3]) >> 2;
 						token = radc_token(tree+10, &raw);
 						buf_m[0][col+2] = (token << 4) + predictor;
+
 						predictor = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[0][col+2]) >> 2;
 						token = radc_token(tree+10, &raw);
 						buf_m[0][col+1] = (token << 4) + predictor;
@@ -185,29 +204,27 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
 							col -= 2;
 							buf_m[1][col+1] = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + buf_m[1][col+2]) >> 2;
+							set_output(buf_m[1][col+1], row+r, col+1);
+
 							buf_m[0][col+2] = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[0][col+3]) >> 2;
 							buf_m[1][col] = ((buf_m[0][col] << 1) + buf_m[0][col+1] + buf_m[1][col+1]) >> 2;
+							set_output(buf_m[1][col], row+r, col);
+
 							buf_m[0][col+1] = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[0][col+2]) >> 2;
 
 							if (rep & 1) {
 								step = radc_token(10, &raw) << 4;
 								buf_m[1][col+1] += step;
-								buf_m[0][col+2] += step;
+								set_output(buf_m[1][col+1], row+r, col+1);
+
 								buf_m[1][col] += step;
+								set_output(buf_m[1][col], row+r, col);
+
+								buf_m[0][col+2] += step;
 								buf_m[0][col+1] += step;
 							}
 						}
 					} while (nreps == 9);
-			}
-
-			for (x=0; x < FINAL_WIDTH; x++) {
-				val = ((buf_m[1][x]) / mul_m);
-				if (val < 0)
-					val = 0;
-				if (val > 255)
-					val = 255;
-
-				output[(row+r)*FINAL_WIDTH+x] = val;
 			}
 		}
 
