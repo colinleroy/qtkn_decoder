@@ -76,12 +76,19 @@ int main(int argc, char *argv[]) {
   type   = get_uint16_at(in_buf, 552);
   printf("Size: %dx%d, type: %d\n", width, height, type);
 
+  if (width != 640 || height != 480) {
+    printf("Unexpected size.\n");
+    exit(1);
+  }
+  width /= 2;
+  height /= 2;
+
   if (type == 30) {
     data_offset = 738;
   } else {
     data_offset = 736;
   }
-  if (qtkn_decode(in_buf + data_offset, width, height, &out_buf)) {
+  if (qtkn_decode(in_buf + data_offset, &out_buf)) {
     printf("Error converting picture.\n");
     goto done;
   }

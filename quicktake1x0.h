@@ -71,7 +71,7 @@ void qtk_raw_header(unsigned char *data, const char *pic_format);
 int qtk_ppm_size(int width, int height);
 int qtk_thumbnail_decode(unsigned char *raw, unsigned char **out, Quicktake1x0Model model);
 int qtkt_decode(unsigned char *raw, int width, int height, unsigned char **out);
-int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out);
+int qtkn_decode(unsigned char *raw, unsigned char **out);
 unsigned char getbithuff (int nbits, unsigned char **raw, unsigned short *huff);
 
 #define ABS(x) (((int)(x) ^ ((int)(x) >> 31)) - ((int)(x) >> 31))

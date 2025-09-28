@@ -47,7 +47,7 @@ char *qtk_ppm_header(int width, int height) {
 
 	snprintf(header, 127,
 					 "P5\n#test\n%d %d\n%d\n",
-					 width/2, height/2, 255);
+					 width, height, 255);
 
 	return header;
 }

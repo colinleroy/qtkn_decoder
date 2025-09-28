@@ -30,8 +30,12 @@
 #include <sys/param.h>
 
 #define radc_token(tree, ptr) ((signed char) getbithuff(8, ptr, huff[tree]))
+#define FINAL_WIDTH 320
+#define FINAL_HEIGHT 240
 
-int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) {
+unsigned char *output;
+
+int qtkn_decode(unsigned char *raw, unsigned char **out) {
 	static const char src[] = {
 		1,1, 2,3, 3,4, 4,2, 5,7, 6,5, 7,6, 7,8,
 		1,0, 2,1, 3,3, 4,4, 5,2, 6,7, 7,6, 8,5, 8,8,
@@ -72,7 +76,7 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 	  0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010
 	};
 
-	#define BUF_SIZE 321
+	#define BUF_SIZE FINAL_WIDTH+2
 	unsigned short huff[19][256];
 	unsigned char huff_l[19][256], huff_h[19][256];
 	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
@@ -80,16 +84,16 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 	short buf_m[2][BUF_SIZE];
 	char *header;
 	unsigned char  last_m = 16, mul_m;
-	unsigned char *tmp_c, *ptr;
+	unsigned char *ptr;
 
-	header = qtk_ppm_header(width, height);
+	header = qtk_ppm_header(FINAL_WIDTH, FINAL_HEIGHT);
 	if (header == NULL)
 		return -ENOMEM;
 
-	len = qtk_ppm_size(width, height);
+	len = qtk_ppm_size(FINAL_WIDTH, FINAL_HEIGHT);
 
-	tmp_c = malloc((size_t)width * (size_t)height);
-	if (tmp_c == NULL) {
+	output = malloc((size_t)FINAL_WIDTH * (size_t)FINAL_HEIGHT);
+	if (output == NULL) {
 		free(header);
 		return -ENOMEM;
 	}
@@ -128,7 +132,7 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 	for (i=0; i < BUF_SIZE; i++) {
 		(buf_m[0])[i] = 2048;
 	}
-	for (row=0; row < height/2; row+=2) {
+	for (row=0; row < FINAL_HEIGHT; row+=2) {
 		c = 0;
 		mul_m = getbits(6, &raw);
 		getbits(6, &raw);
@@ -143,8 +147,8 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 
 		for (r=0; r < 2; r++) {
 			// printf("r loop %d\n", r);
-			buf_m[1][width/2] = buf_m[0][(width/2)+1] = mul_m << 7;
-			for (tree=1, col=width/2; col > 0; ) {
+			buf_m[1][FINAL_WIDTH] = buf_m[0][FINAL_WIDTH+1] = mul_m << 7;
+			for (tree=1, col=FINAL_WIDTH; col > 0; ) {
 				if ((tree = radc_token(tree, &raw))) {
 					col -= 2;
 					if (tree == 8) {
@@ -196,21 +200,21 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 					} while (nreps == 9);
 			}
 
-			for (x=0; x < width/2; x++) {
+			for (x=0; x < FINAL_WIDTH; x++) {
 				val = ((buf_m[1][x]) / mul_m);
 				if (val < 0)
 					val = 0;
 				if (val > 255)
 					val = 255;
 
-				tmp_c[(row+r)*(width/2)+x] = val;
+				output[(row+r)*FINAL_WIDTH+x] = val;
 			}
 		}
 
     /* Consume RADC tokens but don't care about them. */
 		for (c=1; c != 3; c++) {
 			tree = 1;
-			col = width/4;
+			col = FINAL_WIDTH/2;
 
 			while (col > 0) {
 				if ((tree = radc_token(tree, &raw))) {
@@ -244,15 +248,15 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 	*out = calloc(1, len);
 	if (*out == NULL) {
 		free(header);
-		free(tmp_c);
+		free(output);
 		return -ENOMEM;
 	}
 
 	strcpy((char *)*out, header);
 	ptr = *out + strlen(header);
 	free(header);
-	memcpy(ptr, tmp_c, 320*240);
-	free(tmp_c);
+	memcpy(ptr, output, FINAL_WIDTH*FINAL_HEIGHT);
+	free(output);
 
 	return 0;
 }
