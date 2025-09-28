@@ -30,8 +30,6 @@
 #include <sys/param.h>
 
 #define radc_token(tree, ptr) ((signed char) getbithuff(8, ptr, huff[tree]))
-#define PREDICTOR (c ? (buf[c][y-1][x] + buf[c][y][x+1]) / 2 \
-									 : (buf[c][y-1][x+1] + 2*buf[c][y-1][x] + buf[c][y][x+1]) / 4)
 
 int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) {
 	static const char src[] = {
@@ -78,7 +76,7 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 	unsigned short huff[19][256];
 	unsigned char huff_l[19][256], huff_h[19][256];
 	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
-	short last[3] = { 16,16,16 }, mul[3], buf[3][3][BUF_SIZE];
+	short last[3] = { 16,16,16 }, mul[3];
 	short buf_m[2][BUF_SIZE];
 	char *header;
 	unsigned char  last_m = 16, mul_m;
@@ -138,7 +136,7 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 
 		val = val_from_last[last_m] * mul_m;
 
-		for (i=0; i < (int)(sizeof(buf[0])/sizeof(short)); i++) {
+		for (i=0; i < (int)(sizeof(buf_m[0])/sizeof(short)); i++) {
 			((short *)buf_m)[i] = (((short *)buf_m)[i] * val - 1) >> 12;
 		}
 		last_m = mul_m;
@@ -258,5 +256,3 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 
 	return 0;
 }
-
-#undef PREDICTOR
