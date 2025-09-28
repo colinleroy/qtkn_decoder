@@ -92,10 +92,11 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 	unsigned short huff[19][256];
 	unsigned char huff_l[19][256], huff_h[19][256];
 	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
-	short buf_m[2][BUF_SIZE];
+	signed short buf_m[1][BUF_SIZE];
 	char *header;
 	unsigned char  last_m = 16;
 	unsigned char *ptr;
+	signed short val1, val0;
 
 	header = qtk_ppm_header(FINAL_WIDTH, FINAL_HEIGHT);
 	if (header == NULL)
@@ -158,19 +159,20 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 
 		for (r=0; r < 2; r++) {
 			// printf("r loop %d\n", r);
-			buf_m[1][FINAL_WIDTH] = buf_m[0][FINAL_WIDTH+1] = mul_m << 7;
+			val0 = buf_m[0][FINAL_WIDTH+1] = mul_m << 7;
+
 			for (tree=1, col=FINAL_WIDTH; col > 0; ) {
 				if ((tree = radc_token(tree, &raw))) {
 					col -= 2;
 					if (tree == 8) {
 						unsigned char token;
 						token = (unsigned char) radc_token(18, &raw);
-						buf_m[1][col+1] = token * mul_m;
-						set_output(buf_m[1][col+1], row+r, col+1);
+						val1 = token * mul_m;
+						set_output(val1, row+r, col+1);
 
 						token = (unsigned char) radc_token(18, &raw);
-						buf_m[1][col] = token * mul_m;
-						set_output(buf_m[1][col], row+r, col);
+						val0 = token * mul_m;
+						set_output(val0, row+r, col);
 
 						token = (unsigned char) radc_token(18, &raw);
 						buf_m[0][col+2] = token * mul_m;
@@ -178,47 +180,50 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 						buf_m[0][col+1] = token * mul_m;
 					} else {
 						unsigned short predictor;
-						unsigned short token;
+						unsigned short token1, token2, token3, token4;
 
-						predictor = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + buf_m[1][col+2]) >> 2;
-						token = radc_token(tree+10, &raw);
-						buf_m[1][col+1] = (token << 4) + predictor;
-						set_output(buf_m[1][col+1], row+r, col+1);
+						token1 = radc_token(tree+10, &raw);
+						token2 = radc_token(tree+10, &raw);
+						token3 = radc_token(tree+10, &raw);
+						token4 = radc_token(tree+10, &raw);
 
-						predictor = ((buf_m[0][col] << 1) + buf_m[0][col+1] + buf_m[1][col+1]) >> 2;
-						token = radc_token(tree+10, &raw);
-						buf_m[1][col] = (token << 4) + predictor;
-						set_output(buf_m[1][col], row+r, col);
+						predictor = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + val0) >> 2;
+						val1 = (token1 << 4) + predictor;
+						set_output(val1, row+r, col+1);
 
-						predictor = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[0][col+3]) >> 2;
-						token = radc_token(tree+10, &raw);
-						buf_m[0][col+2] = (token << 4) + predictor;
+						predictor = ((val1 << 1) + val0 + buf_m[0][col+3]) >> 2;
+						buf_m[0][col+2] = (token3 << 4) + predictor;
 
-						predictor = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[0][col+2]) >> 2;
-						token = radc_token(tree+10, &raw);
-						buf_m[0][col+1] = (token << 4) + predictor;
+						predictor = ((buf_m[0][col] << 1) + buf_m[0][col+1] + val1) >> 2;
+						val0 = (token2 << 4) + predictor;
+						set_output(val0, row+r, col);
+
+						predictor = ((val0 << 1) + val1 + buf_m[0][col+2]) >> 2;
+						buf_m[0][col+1] = (token4 << 4) + predictor;
 					}
 				} else
 					do {
 						nreps = (col > 2) ? radc_token(9, &raw) + 1 : 1;
 						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
 							col -= 2;
-							buf_m[1][col+1] = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + buf_m[1][col+2]) >> 2;
-							set_output(buf_m[1][col+1], row+r, col+1);
 
-							buf_m[0][col+2] = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[0][col+3]) >> 2;
-							buf_m[1][col] = ((buf_m[0][col] << 1) + buf_m[0][col+1] + buf_m[1][col+1]) >> 2;
-							set_output(buf_m[1][col], row+r, col);
+							val1 = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + val0) >> 2;
+							set_output(val1, row+r, col+1);
 
-							buf_m[0][col+1] = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[0][col+2]) >> 2;
+							buf_m[0][col+2] = ((val1 << 1) + val0 + buf_m[0][col+3]) >> 2;
+
+							val0 = ((buf_m[0][col] << 1) + buf_m[0][col+1] + val1) >> 2;
+							set_output(val0, row+r, col);
+
+							buf_m[0][col+1] = ((val0 << 1) + val1 + buf_m[0][col+2]) >> 2;
 
 							if (rep & 1) {
 								step = radc_token(10, &raw) << 4;
-								buf_m[1][col+1] += step;
-								set_output(buf_m[1][col+1], row+r, col+1);
+								val1 += step;
+								set_output(val1, row+r, col+1);
 
-								buf_m[1][col] += step;
-								set_output(buf_m[1][col], row+r, col);
+								val0 += step;
+								set_output(val0, row+r, col);
 
 								buf_m[0][col+2] += step;
 								buf_m[0][col+1] += step;
