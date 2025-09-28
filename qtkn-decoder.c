@@ -29,7 +29,6 @@
 #include <string.h>
 #include <sys/param.h>
 
-#define radc_token(tree, ptr) ((signed char) getbithuff(8, ptr, huff[tree]))
 #define FINAL_WIDTH 320
 #define FINAL_HEIGHT 240
 
@@ -55,13 +54,88 @@ static void init_divtable(unsigned char factor) {
 }
 
 #define BUF_SIZE FINAL_WIDTH+2
-unsigned short huff[19][256];
-unsigned char huff_l[19][256], huff_h[19][256];
+unsigned char huff_ctrl[9*2][256];
+unsigned char huff_data[9][256];
+
 signed short next_line[BUF_SIZE];
 unsigned char *input_buffer;
 unsigned char *header;
 unsigned int output_len;
 unsigned char last_m = 16;
+
+static void init_huff(void) {
+	/* Huff tables initializer */
+	static const char src[] = {
+		1,1, 2,3, 3,4, 4,2, 5,7, 6,5, 7,6, 7,8,
+		1,0, 2,1, 3,3, 4,4, 5,2, 6,7, 7,6, 8,5, 8,8,
+		2,1, 2,3, 3,0, 3,2, 3,4, 4,6, 5,5, 6,7, 6,8,
+		2,0, 2,1, 2,3, 3,2, 4,4, 5,6, 6,7, 7,5, 7,8,
+		2,1, 2,4, 3,0, 3,2, 3,3, 4,7, 5,5, 6,6, 6,8,
+		2,3, 3,1, 3,2, 3,4, 3,5, 3,6, 4,7, 5,0, 5,8,
+		2,3, 2,6, 3,0, 3,1, 4,4, 4,5, 4,7, 5,2, 5,8,
+		2,4, 2,7, 3,3, 3,6, 4,1, 4,2, 4,5, 5,0, 5,8,
+		2,6, 3,1, 3,3, 3,5, 3,7, 3,8, 4,0, 5,2, 5,4,
+		2,0, 2,1, 3,2, 3,3, 4,4, 4,5, 5,6, 5,7, 4,8,
+		1,0, 2,2, 2,-2,
+		1,-3, 1,3,
+		2,-17, 2,-5, 2,5, 2,17,
+		2,-7, 2,2, 2,9, 2,18,
+		2,-18, 2,-9, 2,-2, 2,7,
+		2,-28, 2,28, 3,-49, 3,-9, 3,9, 4,49, 5,-79, 5,79,
+		2,-1, 2,13, 2,26, 3,39, 4,-16, 5,55, 6,-37, 6,76,
+		2,-26, 2,-13, 2,1, 3,-39, 4,16, 5,-55, 6,-76, 6,37
+	};
+
+  static unsigned char l, h;
+  static unsigned short val, src_idx;
+  l = 0;
+  h = 1;
+
+	/* Initialize "control" huff tables. These ones can have
+	 * up to 8-bits codes.
+	 */
+  for (val = src_idx = 0; l < 18; src_idx += 2) {
+    unsigned char code = val & 0xFF;
+    unsigned char numbits, incr;
+
+    numbits = src[src_idx];
+    incr = 256 >> numbits;
+    code >>= 8-numbits;
+    huff_ctrl[h][code] = src[src_idx+1];
+    huff_ctrl[l][code] = numbits;
+    // printf("huff_ctrl[%d][%.*b] = %d (r%d)\n",
+    //        l, numbits, code, src[src_idx+1], numbits);
+
+    if (val >> 8 != (val+incr) >> 8) {
+      l += 2;
+      h += 2;
+    }
+    val += incr;
+  }
+
+	/* Initialize "data" huff tables. These ones can have
+	 * up to 7-bits codes so pack them tighter.
+	 */
+
+  l = 0;
+  h = 1;
+  for (; l < 9; src_idx += 2) {
+		unsigned char code = val & 0xFF;
+    unsigned char numbits, incr;
+    numbits = src[src_idx];
+    incr = 256 >> numbits;
+
+    code >>= 8-numbits;
+    huff_data[l][code+128] = src[src_idx+1];
+    huff_data[l][code] = numbits;
+    // printf("huff_data[%d][%.*b] = %d (%d bits)\n", l, numbits, code, src[src_idx+1], numbits);
+
+    if (val >> 8 != (val+incr) >> 8) {
+      l++;
+    }
+    val += incr;
+  }
+}
 
 static void init_decoder(void) {
 	unsigned short c, i, s;
@@ -99,27 +173,10 @@ static void init_decoder(void) {
 		exit(1);
 	}
 
-	/* Huffman tree structure init, heavily obfuscated */
-	for (s=i=0; i < (int)sizeof src; i+=2) {
-		unsigned short tmp = src[i] << 8 | (unsigned char) src[i+1];
-		for (c=0; c < 256 >> src[i]; c++) {
-			((unsigned short *)huff)[s] = tmp;
-			((unsigned char *)huff_l)[s] = tmp & 0xFF;
-			((unsigned char *)huff_h)[s] = tmp >> 8;
-			s++;
-		}
-	}
-
-	s = 3;
-	for (c=0; c < 256; c++) {
-		unsigned short tmp = (8-s) << 8 | c >> s << s | 1 << (s-1);
-		huff[18][c] = tmp;
-		huff_l[18][c] = tmp & 0xFF;
-		huff_h[18][c] = tmp >> 8;
-	}
+	init_huff();
 
 	/* Init the bitbuffer */
-	getbits(-1, &input_buffer);
+	initbithuff();
 
 	for (i=0; i < BUF_SIZE; i++) {
 		next_line[i] = 2048;
@@ -165,9 +222,10 @@ static void init_row(void) {
 	};
 	unsigned short val, i;
 
-	mul_m = getbits(6, &input_buffer);
-	getbits(6, &input_buffer);
-	getbits(6, &input_buffer);
+	mul_m = getbits6();
+	/* Ignore the two next ones */
+	getbits6();
+	getbits6();
 
 	/* Init the div table to ease setting each value */
 	init_divtable(mul_m);
@@ -191,32 +249,32 @@ static void decode_row(void) {
 		val0 = next_line[FINAL_WIDTH+1] = mul_m << 7;
 
 		for (tree=1, col=FINAL_WIDTH; col > 0; ) {
-			if ((tree = radc_token(tree, &input_buffer))) {
+			if (tree = getctrlhuff(tree*2)) {
 				col -= 2;
 
 				if (tree == 8) {
 					unsigned char token;
-					token = (unsigned char) radc_token(18, &input_buffer);
+					token = (unsigned char) getdatahuff8();
 					val1 = token * mul_m;
 					output_line[col+1] = token;
 
-					token = (unsigned char) radc_token(18, &input_buffer);
+					token = (unsigned char) getdatahuff8();
 					val0 = token * mul_m;
 					output_line[col] = token;
 
-					token = (unsigned char) radc_token(18, &input_buffer);
+					token = (unsigned char) getdatahuff8();
 					next_line[col+2] = token * mul_m;
-					token = (unsigned char) radc_token(18, &input_buffer);
+					token = (unsigned char) getdatahuff8();
 					next_line[col+1] = token * mul_m;
 
 				} else {
 					unsigned short predictor;
 					signed int token1, token2, token3, token4;
 
-					token1 = (signed char)radc_token(tree+10, &input_buffer) << 4;
-					token2 = (signed char)radc_token(tree+10, &input_buffer) << 4;
-					token3 = (signed char)radc_token(tree+10, &input_buffer) << 4;
-					token4 = (signed char)radc_token(tree+10, &input_buffer) << 4;
+					token1 = (signed char)getdatahuff(tree+1) << 4;
+					token2 = (signed char)getdatahuff(tree+1) << 4;
+					token3 = (signed char)getdatahuff(tree+1) << 4;
+					token4 = (signed char)getdatahuff(tree+1) << 4;
 
 					val1 = ((((val0 + next_line[col+2]) >> 1)
 									+ next_line[col+1]) >> 1)
@@ -238,7 +296,7 @@ static void decode_row(void) {
 				}
 			} else
 				do {
-					nreps = (col > 2) ? radc_token(9, &input_buffer) + 1 : 1;
+					nreps = (col > 2) ? getdatahuff(0) + 1 : 1;
 					for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
 						col -= 2;
 
@@ -257,7 +315,7 @@ static void decode_row(void) {
 																+ val0) >> 1);
 
 						if (rep & 1) {
-							step = radc_token(10, &input_buffer) << 4;
+							step = (signed char)getdatahuff(1) << 4;
 							val1 += step;
 							output_line[col+1] = divtable[val1 >> 8];
 
@@ -282,29 +340,29 @@ static void discard_data(void) {
 		col = FINAL_WIDTH/2;
 
 		while (col > 0) {
-			if ((tree = radc_token(tree, &input_buffer))) {
+			if (tree = getctrlhuff(tree*2)) {
 				col --;
 				if (tree == 8) {
-					radc_token(18, &input_buffer);
-					radc_token(18, &input_buffer);
-					radc_token(18, &input_buffer);
-					radc_token(18, &input_buffer);
+					getdatahuff8();
+					getdatahuff8();
+					getdatahuff8();
+					getdatahuff8();
 				} else {
-					radc_token(tree+10, &input_buffer);
-					radc_token(tree+10, &input_buffer);
-					radc_token(tree+10, &input_buffer);
-					radc_token(tree+10, &input_buffer);
+					getdatahuff(tree+1);
+					getdatahuff(tree+1);
+					getdatahuff(tree+1);
+					getdatahuff(tree+1);
 				}
 			} else
 				do {
 					unsigned char rep_loop;
-					nreps = (col > 1) ? radc_token(9, &input_buffer) + 1 : 1;
+					nreps = (col > 1) ? getdatahuff(0) + 1 : 1;
 
 					rep_loop = nreps > 8 ? 8 : nreps;
 					col -= rep_loop;
 					rep_loop /= 2;
 					while (rep_loop--) {
-						radc_token(10, &input_buffer);
+						getdatahuff(1);
 					}
 				} while (nreps == 9);
 		}

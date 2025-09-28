@@ -72,7 +72,17 @@ int qtk_ppm_size(int width, int height);
 int qtk_thumbnail_decode(unsigned char *raw, unsigned char **out, Quicktake1x0Model model);
 int qtkt_decode(unsigned char *raw, int width, int height, unsigned char **out);
 int qtkn_decode(unsigned char *raw, unsigned char **out);
-unsigned char getbithuff (int nbits, unsigned char **raw, unsigned short *huff);
+
+extern unsigned char *input_buffer;
+extern unsigned char huff_ctrl[9*2][256];
+extern unsigned char huff_data[9][256];
+
+unsigned char getbits6 (void);
+unsigned char getctrlhuff (unsigned char huff_num);
+unsigned char getdatahuff (unsigned char huff_num);
+unsigned char getdatahuff8 (void);
+
+void initbithuff (void);
 
 #define ABS(x) (((int)(x) ^ ((int)(x) >> 31)) - ((int)(x) >> 31))
 #define LIM(x,min,max) MAX(min,MIN(x,max))

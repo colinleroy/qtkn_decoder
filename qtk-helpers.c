@@ -67,36 +67,79 @@ int qtk_ppm_size(int width, int height) {
 	return len;
 }
 
-unsigned char getbithuff (int nbits, unsigned char **raw, unsigned short *huff)
-{
-	static unsigned bitbuf = 0;
-	static int vbits = 0;
-	unsigned char c;
-	int h;
-	unsigned char *ptr;
+unsigned char bitbuf=0;
+unsigned char vbits=0;
 
-	if (nbits == -1) {
-		bitbuf = 0;
-		vbits = 0;
-		return 0;
-	}
+void initbithuff(void) {
+  /* Consider we won't run out of cache there (at the very start). */
+    bitbuf = *(input_buffer++);
+    vbits = 8;
+}
 
-	ptr = *raw;
-	if (vbits < nbits) {
-		c = *ptr;
-		ptr++; (*raw)++;
-		bitbuf = (bitbuf << 8) + c;
-		vbits += 8;
+void refill(void) {
+  bitbuf = *(input_buffer++);
+
+  vbits = 8;
+}
+
+unsigned char getbit(void) {
+  unsigned char r;
+  if (vbits == 0) {
+    refill();
   }
-	c = bitbuf << (32-vbits) >> (32-nbits);
+  r = bitbuf & 0x80 ? 1:0;
 
-	if (!huff)
-		vbits -= nbits;
-	else {
-		h = huff[c];
-		vbits -= h >> 8;
-		c = (unsigned char) h;
-	}
+  bitbuf <<= 1;
+  vbits--;
 
-	return c;
+  return r;
+}
+
+unsigned char getbits6 (void) {
+  unsigned char r = 0;
+  unsigned char n = 6;
+  while (n--) {
+    r = (r<<1) | getbit();
+  }
+  // printf("has %8b\n", r);
+  return r;
+}
+
+unsigned char getctrlhuff (unsigned char huff_num) {
+  unsigned char r = 0;
+  unsigned char n = 0;
+
+  do {
+    n++;
+    // printf(" %8b not valid\n", r);
+    r = (r<<1) | getbit();
+  } while (huff_ctrl[huff_num][r] != n);
+
+  // printf("value for [%02d][%8b] = %d\n", huff_num, r, huff_split[huff_num][r]);
+  return huff_ctrl[huff_num+1][r];
+}
+
+unsigned char getdatahuff (unsigned char huff_num) {
+  unsigned char r = 0;
+  unsigned char n = 0;
+
+  do {
+    n++;
+    // printf(" %8b not valid\n", r);
+    r = (r<<1) | getbit();
+  } while (huff_data[huff_num][r] != n);
+
+  // printf("value for [%02d][%8b] = %d\n", huff_num, r, huff_split[huff_num][r]);
+  return huff_data[huff_num][r+128];
+}
+
+/* Last huff data table is not really Huffman codes, rather a 5 bits value
+ * is shifted left 3 and 4 is added. */
+unsigned char getdatahuff8 (void) {
+  unsigned char r = 0;
+  unsigned char n = 5;
+  while (n--) {
+    r = (r<<1) | getbit();
+  }
+  return (r<<3)|0x04;
 }
