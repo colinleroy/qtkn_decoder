@@ -155,12 +155,12 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 		/* Init the div table to ease setting each value */
 		init_divtable(mul_m);
 
-		val = val_from_last[last_m] * mul_m;
+		val = (val_from_last[last_m] * mul_m) >> 4;
+		last_m = mul_m;
 
 		for (i=0; i < BUF_SIZE; i++) {
-			next_line[i] = (next_line[i] * val - 1) >> 12;
+			next_line[i] = (next_line[i] * val - 1) >> 8;
 		}
-		last_m = mul_m;
 
 		for (r=0; r < 2; r++) {
 			output_line += FINAL_WIDTH;
@@ -185,28 +185,33 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 						next_line[col+2] = token * mul_m;
 						token = (unsigned char) radc_token(18, &raw);
 						next_line[col+1] = token * mul_m;
+
 					} else {
 						unsigned short predictor;
-						unsigned short token1, token2, token3, token4;
+						signed int token1, token2, token3, token4;
 
-						token1 = radc_token(tree+10, &raw);
-						token2 = radc_token(tree+10, &raw);
-						token3 = radc_token(tree+10, &raw);
-						token4 = radc_token(tree+10, &raw);
+						token1 = (signed char)radc_token(tree+10, &raw) << 4;
+						token2 = (signed char)radc_token(tree+10, &raw) << 4;
+						token3 = (signed char)radc_token(tree+10, &raw) << 4;
+						token4 = (signed char)radc_token(tree+10, &raw) << 4;
 
-						predictor = ((next_line[col+1] << 1) + next_line[col+2] + val0) >> 2;
-						val1 = (token1 << 4) + predictor;
+						val1 = ((((val0 + next_line[col+2]) >> 1)
+										+ next_line[col+1]) >> 1)
+										+ token1;
 						output_line[col+1] = divtable[val1 >> 8];
 
-						predictor = ((val1 << 1) + val0 + next_line[col+3]) >> 2;
-						next_line[col+2] = (token3 << 4) + predictor;
+						next_line[col+2] = ((((val0 + next_line[col+3]) >> 1)
+										+ val1) >> 1)
+										+ token3;
 
-						predictor = ((next_line[col] << 1) + next_line[col+1] + val1) >> 2;
-						val0 = (token2 << 4) + predictor;
+						val0 = ((((val1 + next_line[col+1]) >> 1)
+										+ next_line[col+0]) >> 1)
+										+ token2;
 						output_line[col] = divtable[val0 >> 8];
 
-						predictor = ((val0 << 1) + val1 + next_line[col+2]) >> 2;
-						next_line[col+1] = (token4 << 4) + predictor;
+						next_line[col+1] = ((((val1 + next_line[col+2]) >> 1)
+									+ val0) >> 1)
+									+ token4;
 					}
 				} else
 					do {
@@ -214,15 +219,19 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
 							col -= 2;
 
-							val1 = ((next_line[col+1] << 1) + next_line[col+2] + val0) >> 2;
+							val1 = ((((val0 + next_line[col+2]) >> 1)
+												+ next_line[col+1]) >> 1);
 							output_line[col+1] = divtable[val1 >> 8];
 
-							next_line[col+2] = ((val1 << 1) + val0 + next_line[col+3]) >> 2;
+							next_line[col+2] = ((((val0 + next_line[col+3]) >> 1)
+																	+ val1) >> 1);
 
-							val0 = ((next_line[col] << 1) + next_line[col+1] + val1) >> 2;
+							val0 = ((((val1 + next_line[col+1]) >> 1)
+											+ next_line[col+0]) >> 1);
 							output_line[col] = divtable[val0 >> 8];
 
-							next_line[col+1] = ((val0 << 1) + val1 + next_line[col+2]) >> 2;
+							next_line[col+1] = ((((val1 + next_line[col+2]) >> 1)
+																	+ val0) >> 1);
 
 							if (rep & 1) {
 								step = radc_token(10, &raw) << 4;
