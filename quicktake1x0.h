@@ -76,7 +76,6 @@ unsigned char getbithuff (int nbits, unsigned char **raw, unsigned short *huff);
 
 #define ABS(x) (((int)(x) ^ ((int)(x) >> 31)) - ((int)(x) >> 31))
 #define LIM(x,min,max) MAX(min,MIN(x,max))
-#define RAW(ptr, row,col) (ptr)[(row)*width+(col)]
 #define getbits(n, raw) getbithuff(n, raw, 0)
 
 #endif /* !defined(CAMLIBS_QUICKTAKE_1X0_H) */

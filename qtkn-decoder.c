@@ -130,7 +130,7 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 	for (i=0; i < BUF_SIZE; i++) {
 		(buf_m[0])[i] = 2048;
 	}
-	for (row=0; row < height; row+=4) {
+	for (row=0; row < height/2; row+=2) {
 		c = 0;
 		mul_m = getbits(6, &raw);
 		getbits(6, &raw);
@@ -198,15 +198,15 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 					} while (nreps == 9);
 			}
 
-			for (y=0; y < 2; y++) {
-				// printf(" y loop %d\n", y);
+			for (y=0; y < 1; y++) {
 				for (x=0; x < width/2; x++) {
 					val = ((buf_m[y+1][x]) / mul_m);
 					if (val < 0)
 						val = 0;
 					if (val > 255)
 						val = 255;
-					RAW(tmp_c, row+r*2+y,x*2+y) = val;
+
+					tmp_c[(row+r)*(width/2)+x] = val;
 				}
 			}
 			memcpy (buf_m[0]+1, buf_m[2], sizeof buf_m[0]-2);
@@ -256,7 +256,7 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 	strcpy((char *)*out, header);
 	ptr = *out + strlen(header);
 	free(header);
-	memcpy(ptr, tmp_c, 640*480);
+	memcpy(ptr, tmp_c, 320*240);
 	free(tmp_c);
 
 	return 0;
