@@ -36,18 +36,30 @@
 unsigned char *output;
 unsigned char mul_m;
 
+static unsigned char divtable[256];
+
 static void set_output(signed short value, unsigned short row, unsigned short col) {
-	value /= mul_m;
+	output[(row)*FINAL_WIDTH+col] = divtable[value >> 8];
+}
 
-	if (value < 0)
-		value = 0;
-	if (value > 255)
-		value = 255;
+static void init_divtable(unsigned char factor) {
+  unsigned char r = 0;
 
-	output[(row)*FINAL_WIDTH+col] = value;
+	/* init a approximated division table */
+  do {
+    signed short approx = ((r<<8)|0x80)/factor;
+		if (approx < 0) {
+			divtable[r] = 0;
+		} else if (approx > 255) {
+			divtable[r] = 255;
+		} else {
+			divtable[r] = approx;
+		}
+  } while (++r);
 }
 
 int qtkn_decode(unsigned char *raw, unsigned char **out) {
+	/* Huff tables initializer */
 	static const char src[] = {
 		1,1, 2,3, 3,4, 4,2, 5,7, 6,5, 7,6, 7,8,
 		1,0, 2,1, 3,3, 4,4, 5,2, 6,7, 7,6, 8,5, 8,8,
@@ -129,15 +141,6 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 		huff_h[18][c] = tmp >> 8;
 	}
 
-	for (c = 0; c < 19; c++) {
-		for (i = 0; i < 256; i++) {
-			unsigned short test = huff_l[c][i] | (huff_h[c][i] << 8);
-			if (test != huff[c][i]) {
-				printf("unexpected val at [%d][%d]: %04X vs %04X\n", c, i, huff[c][i], test);
-			}
-		}
-	}
-
 	/* Init the bitbuffer */
 	getbits(-1, &raw);
 
@@ -149,6 +152,9 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 		mul_m = getbits(6, &raw);
 		getbits(6, &raw);
 		getbits(6, &raw);
+
+		/* Init the div table to ease setting each value */
+		init_divtable(mul_m);
 
 		val = val_from_last[last_m] * mul_m;
 
