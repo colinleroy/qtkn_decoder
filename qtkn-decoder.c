@@ -198,17 +198,16 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 					} while (nreps == 9);
 			}
 
-			for (y=0; y < 1; y++) {
-				for (x=0; x < width/2; x++) {
-					val = ((buf_m[y+1][x]) / mul_m);
-					if (val < 0)
-						val = 0;
-					if (val > 255)
-						val = 255;
+			for (x=0; x < width/2; x++) {
+				val = ((buf_m[1][x]) / mul_m);
+				if (val < 0)
+					val = 0;
+				if (val > 255)
+					val = 255;
 
-					tmp_c[(row+r)*(width/2)+x] = val;
-				}
+				tmp_c[(row+r)*(width/2)+x] = val;
 			}
+
 			memcpy (buf_m[0]+1, buf_m[2], sizeof buf_m[0]-2);
 		}
 
