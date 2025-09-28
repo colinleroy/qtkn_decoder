@@ -54,7 +54,17 @@ static void init_divtable(unsigned char factor) {
   } while (++r);
 }
 
-int qtkn_decode(unsigned char *raw, unsigned char **out) {
+#define BUF_SIZE FINAL_WIDTH+2
+unsigned short huff[19][256];
+unsigned char huff_l[19][256], huff_h[19][256];
+signed short next_line[BUF_SIZE];
+unsigned char *input_buffer;
+unsigned char *header;
+unsigned int output_len;
+unsigned char last_m = 16;
+
+static void init_decoder(void) {
+	unsigned short c, i, s;
 	/* Huff tables initializer */
 	static const char src[] = {
 		1,1, 2,3, 3,4, 4,2, 5,7, 6,5, 7,6, 7,8,
@@ -77,45 +87,16 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 		2,-26, 2,-13, 2,1, 3,-39, 4,16, 5,-55, 6,-76, 6,37
 	};
 
-	static unsigned short val_from_last[256] = {
-	  0x0000, 0x1000, 0x0800, 0x0555, 0x0400, 0x0333, 0x02ab, 0x0249, 0x0200, 0x01c7, 0x019a, 0x0174, 0x0155, 0x013b, 0x0125, 0x0111, 0x0100,
-	  0x00f1, 0x00e4, 0x00d8, 0x00cd, 0x00c3, 0x00ba, 0x00b2, 0x00ab, 0x00a4, 0x009e, 0x0098, 0x0092, 0x008d, 0x0089, 0x0084, 0x0080,
-	  0x007c, 0x0078, 0x0075, 0x0072, 0x006f, 0x006c, 0x0069, 0x0066, 0x0064, 0x0062, 0x005f, 0x005d, 0x005b, 0x0059, 0x0057, 0x0055,
-	  0x0054, 0x0052, 0x0050, 0x004f, 0x004d, 0x004c, 0x004a, 0x0049, 0x0048, 0x0047, 0x0045, 0x0044, 0x0043, 0x0042, 0x0041, 0x0040,
-	  0x003f, 0x003e, 0x003d, 0x003c, 0x003b, 0x003b, 0x003a, 0x0039, 0x0038, 0x0037, 0x0037, 0x0036, 0x0035, 0x0035, 0x0034, 0x0033,
-	  0x0033, 0x0032, 0x0031, 0x0031, 0x0030, 0x0030, 0x002f, 0x002f, 0x002e, 0x002e, 0x002d, 0x002d, 0x002c, 0x002c, 0x002b, 0x002b,
-	  0x002a, 0x002a, 0x0029, 0x0029, 0x0029, 0x0028, 0x0028, 0x0027, 0x0027, 0x0027, 0x0026, 0x0026, 0x0026, 0x0025, 0x0025, 0x0025,
-	  0x0024, 0x0024, 0x0024, 0x0023, 0x0023, 0x0023, 0x0022, 0x0022, 0x0022, 0x0022, 0x0021, 0x0021, 0x0021, 0x0021, 0x0020, 0x0020,
-	  0x0020, 0x0020, 0x001f, 0x001f, 0x001f, 0x001f, 0x001e, 0x001e, 0x001e, 0x001e, 0x001d, 0x001d, 0x001d, 0x001d, 0x001d, 0x001c,
-	  0x001c, 0x001c, 0x001c, 0x001c, 0x001b, 0x001b, 0x001b, 0x001b, 0x001b, 0x001b, 0x001a, 0x001a, 0x001a, 0x001a, 0x001a, 0x001a,
-	  0x0019, 0x0019, 0x0019, 0x0019, 0x0019, 0x0019, 0x0019, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0017, 0x0017,
-	  0x0017, 0x0017, 0x0017, 0x0017, 0x0017, 0x0017, 0x0016, 0x0016, 0x0016, 0x0016, 0x0016, 0x0016, 0x0016, 0x0016, 0x0015, 0x0015,
-	  0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014,
-	  0x0014, 0x0014, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0012, 0x0012, 0x0012,
-	  0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011,
-	  0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010
-	};
-
-	#define BUF_SIZE FINAL_WIDTH+2
-	unsigned short huff[19][256];
-	unsigned char huff_l[19][256], huff_h[19][256];
-	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
-	signed short next_line[BUF_SIZE];
-	char *header;
-	unsigned char  last_m = 16;
-	unsigned char *ptr;
-	signed short val1, val0;
-
 	header = qtk_ppm_header(FINAL_WIDTH, FINAL_HEIGHT);
 	if (header == NULL)
-		return -ENOMEM;
+		exit(1);
 
-	len = qtk_ppm_size(FINAL_WIDTH, FINAL_HEIGHT);
+	output_len = qtk_ppm_size(FINAL_WIDTH, FINAL_HEIGHT);
 
 	output = malloc((size_t)FINAL_WIDTH * (size_t)FINAL_HEIGHT);
 	if (output == NULL) {
 		free(header);
-		return -ENOMEM;
+		exit(1);
 	}
 
 	/* Huffman tree structure init, heavily obfuscated */
@@ -138,158 +119,22 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 	}
 
 	/* Init the bitbuffer */
-	getbits(-1, &raw);
+	getbits(-1, &input_buffer);
 
 	for (i=0; i < BUF_SIZE; i++) {
 		next_line[i] = 2048;
 	}
 
 	output_line = output - FINAL_WIDTH;
+}
 
-	for (row=0; row < FINAL_HEIGHT; row+=2) {
-		c = 0;
-		mul_m = getbits(6, &raw);
-		getbits(6, &raw);
-		getbits(6, &raw);
-
-		/* Init the div table to ease setting each value */
-		init_divtable(mul_m);
-
-		val = (val_from_last[last_m] * mul_m) >> 4;
-		last_m = mul_m;
-
-		for (i=0; i < BUF_SIZE; i++) {
-			next_line[i] = (next_line[i] * val - 1) >> 8;
-		}
-
-		/* Decode data */
-		for (r=0; r < 2; r++) {
-			output_line += FINAL_WIDTH;
-
-			val0 = next_line[FINAL_WIDTH+1] = mul_m << 7;
-
-			for (tree=1, col=FINAL_WIDTH; col > 0; ) {
-				if ((tree = radc_token(tree, &raw))) {
-					col -= 2;
-
-					if (tree == 8) {
-						unsigned char token;
-						token = (unsigned char) radc_token(18, &raw);
-						val1 = token * mul_m;
-						output_line[col+1] = token;
-
-						token = (unsigned char) radc_token(18, &raw);
-						val0 = token * mul_m;
-						output_line[col] = token;
-
-						token = (unsigned char) radc_token(18, &raw);
-						next_line[col+2] = token * mul_m;
-						token = (unsigned char) radc_token(18, &raw);
-						next_line[col+1] = token * mul_m;
-
-					} else {
-						unsigned short predictor;
-						signed int token1, token2, token3, token4;
-
-						token1 = (signed char)radc_token(tree+10, &raw) << 4;
-						token2 = (signed char)radc_token(tree+10, &raw) << 4;
-						token3 = (signed char)radc_token(tree+10, &raw) << 4;
-						token4 = (signed char)radc_token(tree+10, &raw) << 4;
-
-						val1 = ((((val0 + next_line[col+2]) >> 1)
-										+ next_line[col+1]) >> 1)
-										+ token1;
-						output_line[col+1] = divtable[val1 >> 8];
-
-						next_line[col+2] = ((((val0 + next_line[col+3]) >> 1)
-										+ val1) >> 1)
-										+ token3;
-
-						val0 = ((((val1 + next_line[col+1]) >> 1)
-										+ next_line[col+0]) >> 1)
-										+ token2;
-						output_line[col] = divtable[val0 >> 8];
-
-						next_line[col+1] = ((((val1 + next_line[col+2]) >> 1)
-									+ val0) >> 1)
-									+ token4;
-					}
-				} else
-					do {
-						nreps = (col > 2) ? radc_token(9, &raw) + 1 : 1;
-						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
-							col -= 2;
-
-							val1 = ((((val0 + next_line[col+2]) >> 1)
-												+ next_line[col+1]) >> 1);
-							output_line[col+1] = divtable[val1 >> 8];
-
-							next_line[col+2] = ((((val0 + next_line[col+3]) >> 1)
-																	+ val1) >> 1);
-
-							val0 = ((((val1 + next_line[col+1]) >> 1)
-											+ next_line[col+0]) >> 1);
-							output_line[col] = divtable[val0 >> 8];
-
-							next_line[col+1] = ((((val1 + next_line[col+2]) >> 1)
-																	+ val0) >> 1);
-
-							if (rep & 1) {
-								step = radc_token(10, &raw) << 4;
-								val1 += step;
-								output_line[col+1] = divtable[val1 >> 8];
-
-								val0 += step;
-								output_line[col] = divtable[val0 >> 8];
-
-								next_line[col+2] += step;
-								next_line[col+1] += step;
-							}
-						}
-					} while (nreps == 9);
-			}
-		}
-
-    /* Consume RADC tokens but discard them. */
-		for (r=0; r < 2; r++) {
-			tree = 1;
-			col = FINAL_WIDTH/2;
-
-			while (col > 0) {
-				if ((tree = radc_token(tree, &raw))) {
-					col --;
-					if (tree == 8) {
-						radc_token(18, &raw);
-						radc_token(18, &raw);
-						radc_token(18, &raw);
-						radc_token(18, &raw);
-					} else {
-						radc_token(tree+10, &raw);
-						radc_token(tree+10, &raw);
-						radc_token(tree+10, &raw);
-						radc_token(tree+10, &raw);
-					}
-				} else
-					do {
-						unsigned char rep_loop;
-						nreps = (col > 1) ? radc_token(9, &raw) + 1 : 1;
-						rep_loop = nreps > 8 ? 8 : nreps;
-						col -= rep_loop;
-						rep_loop /= 2;
-						while (rep_loop--) {
-							radc_token(10, &raw);
-						}
-					} while (nreps == 9);
-			}
-		}
-
-	}
-
-	*out = calloc(1, len);
+static void finalize_decoder(unsigned char **out) {
+	unsigned char *ptr;
+	*out = calloc(1, output_len);
 	if (*out == NULL) {
 		free(header);
 		free(output);
-		return -ENOMEM;
+		exit(1);
 	}
 
 	strcpy((char *)*out, header);
@@ -297,6 +142,189 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 	free(header);
 	memcpy(ptr, output, FINAL_WIDTH*FINAL_HEIGHT);
 	free(output);
+}
+
+static void init_row(void) {
+	static unsigned short val_from_last[256] = {
+	  0x0000, 0x1000, 0x0800, 0x0555, 0x0400, 0x0333, 0x02ab, 0x0249, 0x0200, 0x01c7, 0x019a, 0x0174, 0x0155, 0x013b, 0x0125, 0x0111, 0x0100,
+	  0x00f1, 0x00e4, 0x00d8, 0x00cd, 0x00c3, 0x00ba, 0x00b2, 0x00ab, 0x00a4, 0x009e, 0x0098, 0x0092, 0x008d, 0x0089, 0x0084, 0x0080,
+	  0x007c, 0x0078, 0x0075, 0x0072, 0x006f, 0x006c, 0x0069, 0x0066, 0x0064, 0x0062, 0x005f, 0x005d, 0x005b, 0x0059, 0x0057, 0x0055,
+	  0x0054, 0x0052, 0x0050, 0x004f, 0x004d, 0x004c, 0x004a, 0x0049, 0x0048, 0x0047, 0x0045, 0x0044, 0x0043, 0x0042, 0x0041, 0x0040,
+	  0x003f, 0x003e, 0x003d, 0x003c, 0x003b, 0x003b, 0x003a, 0x0039, 0x0038, 0x0037, 0x0037, 0x0036, 0x0035, 0x0035, 0x0034, 0x0033,
+	  0x0033, 0x0032, 0x0031, 0x0031, 0x0030, 0x0030, 0x002f, 0x002f, 0x002e, 0x002e, 0x002d, 0x002d, 0x002c, 0x002c, 0x002b, 0x002b,
+	  0x002a, 0x002a, 0x0029, 0x0029, 0x0029, 0x0028, 0x0028, 0x0027, 0x0027, 0x0027, 0x0026, 0x0026, 0x0026, 0x0025, 0x0025, 0x0025,
+	  0x0024, 0x0024, 0x0024, 0x0023, 0x0023, 0x0023, 0x0022, 0x0022, 0x0022, 0x0022, 0x0021, 0x0021, 0x0021, 0x0021, 0x0020, 0x0020,
+	  0x0020, 0x0020, 0x001f, 0x001f, 0x001f, 0x001f, 0x001e, 0x001e, 0x001e, 0x001e, 0x001d, 0x001d, 0x001d, 0x001d, 0x001d, 0x001c,
+	  0x001c, 0x001c, 0x001c, 0x001c, 0x001b, 0x001b, 0x001b, 0x001b, 0x001b, 0x001b, 0x001a, 0x001a, 0x001a, 0x001a, 0x001a, 0x001a,
+	  0x0019, 0x0019, 0x0019, 0x0019, 0x0019, 0x0019, 0x0019, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0018, 0x0017, 0x0017,
+	  0x0017, 0x0017, 0x0017, 0x0017, 0x0017, 0x0017, 0x0016, 0x0016, 0x0016, 0x0016, 0x0016, 0x0016, 0x0016, 0x0016, 0x0015, 0x0015,
+	  0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014, 0x0014,
+	  0x0014, 0x0014, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0013, 0x0012, 0x0012, 0x0012,
+	  0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0012, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011,
+	  0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0011, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010
+	};
+	unsigned short val, i;
+
+	mul_m = getbits(6, &input_buffer);
+	getbits(6, &input_buffer);
+	getbits(6, &input_buffer);
+
+	/* Init the div table to ease setting each value */
+	init_divtable(mul_m);
+
+	val = (val_from_last[last_m] * mul_m) >> 4;
+	last_m = mul_m;
+
+	for (i=0; i < BUF_SIZE; i++) {
+		next_line[i] = (next_line[i] * val - 1) >> 8;
+	}
+}
+
+static void decode_row(void) {
+	int col, tree, nreps, rep, step, r;
+	signed short val1, val0;
+
+	/* Decode data */
+	for (r=0; r < 2; r++) {
+		output_line += FINAL_WIDTH;
+
+		val0 = next_line[FINAL_WIDTH+1] = mul_m << 7;
+
+		for (tree=1, col=FINAL_WIDTH; col > 0; ) {
+			if ((tree = radc_token(tree, &input_buffer))) {
+				col -= 2;
+
+				if (tree == 8) {
+					unsigned char token;
+					token = (unsigned char) radc_token(18, &input_buffer);
+					val1 = token * mul_m;
+					output_line[col+1] = token;
+
+					token = (unsigned char) radc_token(18, &input_buffer);
+					val0 = token * mul_m;
+					output_line[col] = token;
+
+					token = (unsigned char) radc_token(18, &input_buffer);
+					next_line[col+2] = token * mul_m;
+					token = (unsigned char) radc_token(18, &input_buffer);
+					next_line[col+1] = token * mul_m;
+
+				} else {
+					unsigned short predictor;
+					signed int token1, token2, token3, token4;
+
+					token1 = (signed char)radc_token(tree+10, &input_buffer) << 4;
+					token2 = (signed char)radc_token(tree+10, &input_buffer) << 4;
+					token3 = (signed char)radc_token(tree+10, &input_buffer) << 4;
+					token4 = (signed char)radc_token(tree+10, &input_buffer) << 4;
+
+					val1 = ((((val0 + next_line[col+2]) >> 1)
+									+ next_line[col+1]) >> 1)
+									+ token1;
+					output_line[col+1] = divtable[val1 >> 8];
+
+					next_line[col+2] = ((((val0 + next_line[col+3]) >> 1)
+									+ val1) >> 1)
+									+ token3;
+
+					val0 = ((((val1 + next_line[col+1]) >> 1)
+									+ next_line[col+0]) >> 1)
+									+ token2;
+					output_line[col] = divtable[val0 >> 8];
+
+					next_line[col+1] = ((((val1 + next_line[col+2]) >> 1)
+								+ val0) >> 1)
+								+ token4;
+				}
+			} else
+				do {
+					nreps = (col > 2) ? radc_token(9, &input_buffer) + 1 : 1;
+					for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
+						col -= 2;
+
+						val1 = ((((val0 + next_line[col+2]) >> 1)
+											+ next_line[col+1]) >> 1);
+						output_line[col+1] = divtable[val1 >> 8];
+
+						next_line[col+2] = ((((val0 + next_line[col+3]) >> 1)
+																+ val1) >> 1);
+
+						val0 = ((((val1 + next_line[col+1]) >> 1)
+										+ next_line[col+0]) >> 1);
+						output_line[col] = divtable[val0 >> 8];
+
+						next_line[col+1] = ((((val1 + next_line[col+2]) >> 1)
+																+ val0) >> 1);
+
+						if (rep & 1) {
+							step = radc_token(10, &input_buffer) << 4;
+							val1 += step;
+							output_line[col+1] = divtable[val1 >> 8];
+
+							val0 += step;
+							output_line[col] = divtable[val0 >> 8];
+
+							next_line[col+2] += step;
+							next_line[col+1] += step;
+						}
+					}
+				} while (nreps == 9);
+		}
+	}
+}
+
+static void discard_data(void) {
+	int col, tree, nreps, rep, r;
+
+  /* Consume RADC tokens but discard them. */
+	for (r=0; r < 2; r++) {
+		tree = 1;
+		col = FINAL_WIDTH/2;
+
+		while (col > 0) {
+			if ((tree = radc_token(tree, &input_buffer))) {
+				col --;
+				if (tree == 8) {
+					radc_token(18, &input_buffer);
+					radc_token(18, &input_buffer);
+					radc_token(18, &input_buffer);
+					radc_token(18, &input_buffer);
+				} else {
+					radc_token(tree+10, &input_buffer);
+					radc_token(tree+10, &input_buffer);
+					radc_token(tree+10, &input_buffer);
+					radc_token(tree+10, &input_buffer);
+				}
+			} else
+				do {
+					unsigned char rep_loop;
+					nreps = (col > 1) ? radc_token(9, &input_buffer) + 1 : 1;
+
+					rep_loop = nreps > 8 ? 8 : nreps;
+					col -= rep_loop;
+					rep_loop /= 2;
+					while (rep_loop--) {
+						radc_token(10, &input_buffer);
+					}
+				} while (nreps == 9);
+		}
+	}
+}
+int qtkn_decode(unsigned char *raw, unsigned char **out) {
+	unsigned char row;
+
+	input_buffer = raw;
+
+	init_decoder();
+
+	for (row=0; row < FINAL_HEIGHT; row+=2) {
+		init_row();
+
+		decode_row();
+		discard_data();
+	}
+
+	finalize_decoder(out);
 
 	return 0;
 }
