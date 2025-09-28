@@ -136,8 +136,8 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 
 		val = val_from_last[last_m] * mul_m;
 
-		for (i=0; i < (int)(sizeof(buf_m[0])/sizeof(short)); i++) {
-			((short *)buf_m)[i] = (((short *)buf_m)[i] * val - 1) >> 12;
+		for (i=0; i < BUF_SIZE; i++) {
+			buf_m[0][i] = (buf_m[0][i] * val - 1) >> 12;
 		}
 		last_m = mul_m;
 
