@@ -162,6 +162,7 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 			next_line[i] = (next_line[i] * val - 1) >> 8;
 		}
 
+		/* Decode data */
 		for (r=0; r < 2; r++) {
 			output_line += FINAL_WIDTH;
 
@@ -249,8 +250,8 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 			}
 		}
 
-    /* Consume RADC tokens but don't care about them. */
-		for (c=1; c != 3; c++) {
+    /* Consume RADC tokens but discard them. */
+		for (r=0; r < 2; r++) {
 			tree = 1;
 			col = FINAL_WIDTH/2;
 
@@ -270,12 +271,13 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 					}
 				} else
 					do {
+						unsigned char rep_loop;
 						nreps = (col > 1) ? radc_token(9, &raw) + 1 : 1;
-						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
-							col--;
-							if (rep & 1) {
-								radc_token(10, &raw);
-							}
+						rep_loop = nreps > 8 ? 8 : nreps;
+						col -= rep_loop;
+						rep_loop /= 2;
+						while (rep_loop--) {
+							radc_token(10, &raw);
 						}
 					} while (nreps == 9);
 			}
