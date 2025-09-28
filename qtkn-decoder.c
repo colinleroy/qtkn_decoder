@@ -92,7 +92,7 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 	unsigned short huff[19][256];
 	unsigned char huff_l[19][256], huff_h[19][256];
 	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
-	signed short buf_m[1][BUF_SIZE];
+	signed short next_line[BUF_SIZE];
 	char *header;
 	unsigned char  last_m = 16;
 	unsigned char *ptr;
@@ -142,7 +142,7 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 	getbits(-1, &raw);
 
 	for (i=0; i < BUF_SIZE; i++) {
-		(buf_m[0])[i] = 2048;
+		next_line[i] = 2048;
 	}
 	for (row=0; row < FINAL_HEIGHT; row+=2) {
 		c = 0;
@@ -153,13 +153,13 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 		val = val_from_last[last_m] * mul_m;
 
 		for (i=0; i < BUF_SIZE; i++) {
-			buf_m[0][i] = (buf_m[0][i] * val - 1) >> 12;
+			next_line[i] = (next_line[i] * val - 1) >> 12;
 		}
 		last_m = mul_m;
 
 		for (r=0; r < 2; r++) {
 			// printf("r loop %d\n", r);
-			val0 = buf_m[0][FINAL_WIDTH+1] = mul_m << 7;
+			val0 = next_line[FINAL_WIDTH+1] = mul_m << 7;
 
 			for (tree=1, col=FINAL_WIDTH; col > 0; ) {
 				if ((tree = radc_token(tree, &raw))) {
@@ -175,9 +175,9 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 						set_output(val0, row+r, col);
 
 						token = (unsigned char) radc_token(18, &raw);
-						buf_m[0][col+2] = token * mul_m;
+						next_line[col+2] = token * mul_m;
 						token = (unsigned char) radc_token(18, &raw);
-						buf_m[0][col+1] = token * mul_m;
+						next_line[col+1] = token * mul_m;
 					} else {
 						unsigned short predictor;
 						unsigned short token1, token2, token3, token4;
@@ -187,19 +187,19 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 						token3 = radc_token(tree+10, &raw);
 						token4 = radc_token(tree+10, &raw);
 
-						predictor = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + val0) >> 2;
+						predictor = ((next_line[col+1] << 1) + next_line[col+2] + val0) >> 2;
 						val1 = (token1 << 4) + predictor;
 						set_output(val1, row+r, col+1);
 
-						predictor = ((val1 << 1) + val0 + buf_m[0][col+3]) >> 2;
-						buf_m[0][col+2] = (token3 << 4) + predictor;
+						predictor = ((val1 << 1) + val0 + next_line[col+3]) >> 2;
+						next_line[col+2] = (token3 << 4) + predictor;
 
-						predictor = ((buf_m[0][col] << 1) + buf_m[0][col+1] + val1) >> 2;
+						predictor = ((next_line[col] << 1) + next_line[col+1] + val1) >> 2;
 						val0 = (token2 << 4) + predictor;
 						set_output(val0, row+r, col);
 
-						predictor = ((val0 << 1) + val1 + buf_m[0][col+2]) >> 2;
-						buf_m[0][col+1] = (token4 << 4) + predictor;
+						predictor = ((val0 << 1) + val1 + next_line[col+2]) >> 2;
+						next_line[col+1] = (token4 << 4) + predictor;
 					}
 				} else
 					do {
@@ -207,15 +207,15 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
 							col -= 2;
 
-							val1 = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + val0) >> 2;
+							val1 = ((next_line[col+1] << 1) + next_line[col+2] + val0) >> 2;
 							set_output(val1, row+r, col+1);
 
-							buf_m[0][col+2] = ((val1 << 1) + val0 + buf_m[0][col+3]) >> 2;
+							next_line[col+2] = ((val1 << 1) + val0 + next_line[col+3]) >> 2;
 
-							val0 = ((buf_m[0][col] << 1) + buf_m[0][col+1] + val1) >> 2;
+							val0 = ((next_line[col] << 1) + next_line[col+1] + val1) >> 2;
 							set_output(val0, row+r, col);
 
-							buf_m[0][col+1] = ((val0 << 1) + val1 + buf_m[0][col+2]) >> 2;
+							next_line[col+1] = ((val0 << 1) + val1 + next_line[col+2]) >> 2;
 
 							if (rep & 1) {
 								step = radc_token(10, &raw) << 4;
@@ -225,8 +225,8 @@ int qtkn_decode(unsigned char *raw, unsigned char **out) {
 								val0 += step;
 								set_output(val0, row+r, col);
 
-								buf_m[0][col+2] += step;
-								buf_m[0][col+1] += step;
+								next_line[col+2] += step;
+								next_line[col+1] += step;
 							}
 						}
 					} while (nreps == 9);
