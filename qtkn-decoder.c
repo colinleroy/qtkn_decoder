@@ -79,7 +79,7 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 	unsigned char huff_l[19][256], huff_h[19][256];
 	int row, col, tree, nreps, rep, step, i, c, s, r, x, y, val, len;
 	short last[3] = { 16,16,16 }, mul[3], buf[3][3][BUF_SIZE];
-	short buf_m[3][BUF_SIZE];
+	short buf_m[2][BUF_SIZE];
 	char *header;
 	unsigned char  last_m = 16, mul_m;
 	unsigned char *tmp_c, *ptr;
@@ -145,7 +145,7 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 
 		for (r=0; r < 2; r++) {
 			// printf("r loop %d\n", r);
-			buf_m[1][width/2] = buf_m[2][width/2] = mul_m << 7;
+			buf_m[1][width/2] = buf_m[0][(width/2)+1] = mul_m << 7;
 			for (tree=1, col=width/2; col > 0; ) {
 				if ((tree = radc_token(tree, &raw))) {
 					col -= 2;
@@ -156,9 +156,9 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 						token = (unsigned char) radc_token(18, &raw);
 						buf_m[1][col] = token * mul_m;
 						token = (unsigned char) radc_token(18, &raw);
-						buf_m[2][col+1] = token * mul_m;
+						buf_m[0][col+2] = token * mul_m;
 						token = (unsigned char) radc_token(18, &raw);
-						buf_m[2][col] = token * mul_m;
+						buf_m[0][col+1] = token * mul_m;
 					} else {
 						unsigned short predictor;
 						unsigned short token;
@@ -170,12 +170,12 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 						token = radc_token(tree+10, &raw);
 						buf_m[1][col] = (token << 4) + predictor;
 
-						predictor = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[2][col+2]) >> 2;
+						predictor = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[0][col+3]) >> 2;
 						token = radc_token(tree+10, &raw);
-						buf_m[2][col+1] = (token << 4) + predictor;
-						predictor = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[2][col+1]) >> 2;
+						buf_m[0][col+2] = (token << 4) + predictor;
+						predictor = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[0][col+2]) >> 2;
 						token = radc_token(tree+10, &raw);
-						buf_m[2][col] = (token << 4) + predictor;
+						buf_m[0][col+1] = (token << 4) + predictor;
 					}
 				} else
 					do {
@@ -183,16 +183,16 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 						for (rep=0; rep < 8 && rep < nreps && col > 0; rep++) {
 							col -= 2;
 							buf_m[1][col+1] = ((buf_m[0][col+1] << 1) + buf_m[0][col+2] + buf_m[1][col+2]) >> 2;
-							buf_m[2][col+1] = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[2][col+2]) >> 2;
+							buf_m[0][col+2] = ((buf_m[1][col+1] << 1) + buf_m[1][col+2] + buf_m[0][col+3]) >> 2;
 							buf_m[1][col] = ((buf_m[0][col] << 1) + buf_m[0][col+1] + buf_m[1][col+1]) >> 2;
-							buf_m[2][col] = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[2][col+1]) >> 2;
+							buf_m[0][col+1] = ((buf_m[1][col] << 1) + buf_m[1][col+1] + buf_m[0][col+2]) >> 2;
 
 							if (rep & 1) {
 								step = radc_token(10, &raw) << 4;
 								buf_m[1][col+1] += step;
-								buf_m[2][col+1] += step;
+								buf_m[0][col+2] += step;
 								buf_m[1][col] += step;
-								buf_m[2][col] += step;
+								buf_m[0][col+1] += step;
 							}
 						}
 					} while (nreps == 9);
@@ -207,8 +207,6 @@ int qtkn_decode(unsigned char *raw, int width, int height, unsigned char **out) 
 
 				tmp_c[(row+r)*(width/2)+x] = val;
 			}
-
-			memcpy (buf_m[0]+1, buf_m[2], sizeof buf_m[0]-2);
 		}
 
     /* Consume RADC tokens but don't care about them. */
